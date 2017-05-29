@@ -7,39 +7,57 @@ import java.util.Arrays;
 import java.util.HashMap;
 
 public class JonathanRead {
-	private static ArrayList<String> fragments;
 
 	public static void main(String[] args) {
 		try (BufferedReader in = new BufferedReader(new FileReader(args[0]))) {
 			String fragmentProblem;
 			while ((fragmentProblem = in.readLine()) != null) {
-				System.out.println(reassemble(fragmentProblem, false));
+				System.out.println(reassemble(fragmentProblem));
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
 
-	public static String reassemble(String input, boolean isTest) throws InterruptedException {
+	public static String reassemble(String input) throws InterruptedException {
 		HashMap<Integer, FragmentMerge> overlappingFragments;
 		String output = "";
 
-		fragments = new ArrayList<String>(Arrays.asList(input.split(";")));
+		ArrayList<String> fragments = new ArrayList<String>(Arrays.asList(input.split(";")));
 
 		// while more than one fragment exists
 		while (fragments.size() > 1) {
 			// get all overlapping fragments
-			overlappingFragments = getOverlappingFragments();
+			overlappingFragments = getOverlappingFragments(fragments);
 
-			// merge the best match on the line
-			mergeBiggestOverlap(overlappingFragments);
+			// find the best one on the line
+			FragmentMerge merge = getBiggestOverlap(overlappingFragments);
+
+			// merge it
+
+			mergeFragment(fragments, merge);
 		}
 
 		output = fragments.get(0);
 		return output;
 	}
 
-	private static void mergeBiggestOverlap(HashMap<Integer, FragmentMerge> merges) {
+	private static void mergeFragment(ArrayList<String> fragments, FragmentMerge merge) {
+		String startingFragment = fragments.get(merge.getStartingFragmentIndex());
+		String endingFragment = fragments.get(merge.getEndingFragmentIndex());
+		int overlapIndex = merge.getOverlapIndex();
+
+		// merge the fragments
+		String mergedFragments = startingFragment.substring(0, overlapIndex) + endingFragment;
+
+		// overwrite the first
+		fragments.set(merge.getStartingFragmentIndex(), mergedFragments);
+
+		// remove the second
+		fragments.remove(merge.getEndingFragmentIndex());
+	}
+
+	private static FragmentMerge getBiggestOverlap(HashMap<Integer, FragmentMerge> merges) {
 		int maxOverlapAmount = 0;
 		int maxOverlapKey = 0;
 		int currentOverlapAmount = 0;
@@ -47,7 +65,7 @@ public class JonathanRead {
 		// check there is something to merge
 		if (merges == null || merges.size() == 0) {
 			System.out.println("Nothing to merge");
-			return;
+			return null;
 		}
 
 		// for each match that was stored
@@ -62,11 +80,10 @@ public class JonathanRead {
 			}
 		}
 
-		// merge the best match
-		merges.get(maxOverlapKey).mergeFragments();
+		return merges.get(maxOverlapKey);
 	}
 
-	private static HashMap<Integer, FragmentMerge> getOverlappingFragments() {
+	private static HashMap<Integer, FragmentMerge> getOverlappingFragments(ArrayList<String> fragments) {
 		HashMap<Integer, FragmentMerge> overlappingFragments = new HashMap<Integer, FragmentMerge>();
 
 		// for each fragment in the line
@@ -76,18 +93,20 @@ public class JonathanRead {
 				// ensure not comparing itself
 				if (endingFragment != startingFragment) {
 					// see if there is an overlap
-					int overlap = getOverlap(fragments, startingFragment, endingFragment);
+					int overlapIndex = getOverlapIndex(fragments, startingFragment, endingFragment);
 
 					// if the fragment was removed, skip to the next one
-					if (overlap == -1) {
+					if (overlapIndex == -1) {
 						break;
-					} else if (overlap > 0) {
+					} else if (overlapIndex > 0) {
 						// otherwise check if this fragment already has a match
-						FragmentMerge existingOverlap = overlappingFragments.get(startingFragment);
+						FragmentMerge existingMerge = overlappingFragments.get(startingFragment);
 
 						// if it doesn't, or this one is better, then store the merge
-						if (existingOverlap == null || overlap > existingOverlap.getOverlapAmount()) {
-							FragmentMerge merge = new FragmentMerge(startingFragment, startingFragment, endingFragment, overlap);
+						if (existingMerge == null || overlapIndex > existingMerge.getOverlapAmount()) {
+							int overlapAmount = fragments.get(startingFragment).length() - overlapIndex;
+
+							FragmentMerge merge = new FragmentMerge(startingFragment, endingFragment, overlapIndex, overlapAmount);
 							overlappingFragments.put(startingFragment, merge);
 						}
 					}
@@ -98,8 +117,8 @@ public class JonathanRead {
 		return overlappingFragments;
 	}
 
-	private static int getOverlap(ArrayList<String> fragments, int startingFragment, int endingFragment) {
-		int overlap = 0;
+	private static int getOverlapIndex(ArrayList<String> fragments, int startingFragment, int endingFragment) {
+		int overlapIndex = 0;
 		boolean isOverlap = false;
 		int matchLetterIndex = 0;
 
@@ -112,7 +131,7 @@ public class JonathanRead {
 			if (ch1 == ch2) { // match
 				// if this is the first match, set overlap
 				if (!isOverlap) { // is first match?
-					overlap = checkLetterIndex;
+					overlapIndex = checkLetterIndex;
 					isOverlap = true;
 				} else if (matchLetterIndex == fragments.get(endingFragment).length() - 1) {
 					// match in middle of fragment, abort!
@@ -120,12 +139,12 @@ public class JonathanRead {
 					return -1;
 				} else if (checkLetterIndex == fragments.get(startingFragment).length() - 1) {
 					// last match so full match found
-					return overlap;
+					return overlapIndex;
 				}
 				matchLetterIndex++;
 			} else if (isOverlap) {
 				// letters don't match - reset overlap
-				overlap = 0;
+				overlapIndex = 0;
 				isOverlap = false;
 				matchLetterIndex = 0;
 			}
@@ -135,22 +154,16 @@ public class JonathanRead {
 
 	static class FragmentMerge {
 
-		private int	mId;
 		private int	mStartingFragmentIndex;
 		private int	mEndingFragmentIndex;
 		private int	mOverlapIndex;
 		private int	mOverlapAmount;
 
-		FragmentMerge(int id, int startingFragment, int endingFragment, int overlapIndex) {
-			mId = id;
+		FragmentMerge(int startingFragment, int endingFragment, int overlapIndex, int overlapAmount) {
 			mStartingFragmentIndex = startingFragment;
 			mEndingFragmentIndex = endingFragment;
 			mOverlapIndex = overlapIndex;
-			mOverlapAmount = fragments.get(startingFragment).length() - overlapIndex;
-		}
-
-		public int getmId() {
-			return mId;
+			mOverlapAmount = overlapAmount;
 		}
 
 		public int getStartingFragmentIndex() {
@@ -167,19 +180,6 @@ public class JonathanRead {
 
 		public int getOverlapAmount() {
 			return mOverlapAmount;
-		}
-
-		public String getStartingFragment() {
-			return fragments.get(mStartingFragmentIndex);
-		}
-
-		public String getEndingFragment() {
-			return fragments.get(mEndingFragmentIndex);
-		}
-
-		public void mergeFragments() {
-			fragments.set(mId, getStartingFragment().substring(0, getOverlapIndex()) + getEndingFragment());
-			fragments.remove(mEndingFragmentIndex);
 		}
 
 	}
